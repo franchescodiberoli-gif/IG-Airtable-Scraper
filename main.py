@@ -179,7 +179,6 @@ def scrape_agency_reels(api_key, base_id, rapidapi_key):
                             default={}
                         )
                         download_link = vid.get("url", "")
-                        ig_share_link = f"https://www.instagram.com/reel/{reel_id}/"
                         record = {
                             "🔒 Account": [record_id],
                             "🔢 Followers Snapshot": snapshot,
@@ -190,7 +189,6 @@ def scrape_agency_reels(api_key, base_id, rapidapi_key):
                             "🗓️ Date of posting": posted.date().isoformat(),
                             "🤖 Reel ID": reel_id,
                             "⬇️ Download link": download_link,
-                            "⬇️ Download link Agency": ig_share_link,
                         }
                         create_url = f"{base_url}/{quote('🎥 Agency Reels')}"
                         payload = {"records": [{"fields": record}]}
@@ -434,7 +432,6 @@ def scrape_competitor_reels(api_key, base_id, rapidapi_key):
                             default={}
                         )
                         download_link = vid.get("url", "")
-                        ig_share_link = f"https://www.instagram.com/reel/{reel_id}/"
                         record = {
                             "🔒 Account": [acct_id],
                             "🔢 Followers Snapshot": snapshot,
@@ -445,7 +442,6 @@ def scrape_competitor_reels(api_key, base_id, rapidapi_key):
                             "🗓️ Date of posting": posted.date().isoformat(),
                             "🤖 Reel ID": reel_id,
                             "⬇️ Download link": download_link,
-                            "⬇️ Download link Competitor": ig_share_link,
                         }
                         url = f"{base_url}/{quote('🎥 Competitor Reels')}"
                         payload = {"records": [{"fields": record}]}
