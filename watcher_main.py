@@ -39,12 +39,11 @@ def records_to_dataframe(records):
     rows = [rec.get("fields", {}) for rec in records]
     return pd.DataFrame(rows)
 
-def _download_video(ig_share_link, cdn_link, reel_id, rapidapi_key):
+def _download_video(ig_share_link, cdn_link, reel_id):
     """
-    Orden de intentos:
-    1. yt-dlp con link de Instagram (gratis, sin cookies, no expira)
-    2. CDN directo (puede estar expirado)
-    3. RapidAPI link fresco
+    Orden de intentos (sin RapidAPI para no consumir creditos):
+    1. yt-dlp con link permanente de Instagram (gratis, no expira)
+    2. CDN directo como respaldo
     """
     video_bytes = None
 
@@ -82,35 +81,6 @@ def _download_video(ig_share_link, cdn_link, reel_id, rapidapi_key):
         except Exception as e:
             logging.warning(f"[Intento 2 FAIL] CDN: {e}")
 
-    # Intento 3: RapidAPI link fresco
-    if not video_bytes and rapidapi_key:
-        try:
-            logging.info(f"[Intento 3] RapidAPI para {reel_id}")
-            rapid_headers = {
-                "x-rapidapi-key": rapidapi_key,
-                "x-rapidapi-host": "real-time-instagram-scraper-api1.p.rapidapi.com"
-            }
-            resp2 = requests.get(
-                "https://real-time-instagram-scraper-api1.p.rapidapi.com/v1/post_info",
-                headers=rapid_headers,
-                params={"code_or_id_or_url": reel_id},
-                timeout=15
-            )
-            resp2.raise_for_status()
-            data2 = resp2.json().get("data", {})
-            vid2  = max(data2.get("video_versions", []), key=lambda v: v.get("height", 0), default={})
-            fresh_url = vid2.get("url", "")
-            if not fresh_url:
-                raise ValueError("RapidAPI no devolvio URL")
-            r2 = requests.get(fresh_url, timeout=20)
-            r2.raise_for_status()
-            video_bytes = BytesIO(r2.content)
-            video_bytes.name = f"{reel_id}.mp4"
-            video_bytes.seek(0)
-            logging.info(f"[Intento 3 OK] RapidAPI para {reel_id}")
-        except Exception as e:
-            logging.warning(f"[Intento 3 FAIL] RapidAPI: {e}")
-
     return video_bytes
 
 def send_gave_to_model_videos(api_key, base_id):
@@ -119,7 +89,6 @@ def send_gave_to_model_videos(api_key, base_id):
     try:
         bot_token    = settings.loc[settings["Name"]=="TELEGRAM_BOT_API_KEY",     "Value"].iat[0]
         personal_id  = settings.loc[settings["Name"]=="TELEGRAM_PERSONAL_CHAT_ID","Value"].iat[0]
-        rapidapi_key = settings.loc[settings["Name"]=="RAPIDAPI_KEY",             "Value"].iat[0]
     except Exception as e:
         logging.error(f"Missing settings: {e}")
         return
@@ -141,10 +110,10 @@ def send_gave_to_model_videos(api_key, base_id):
         ig_share     = flds.get("⬇️ Download link Agency", f"https://www.instagram.com/reel/{code}/")
 
         logging.info(f"Processing reel {rid} ({code})")
-        video_bytes = _download_video(ig_share, cdn_link, code, rapidapi_key)
+        video_bytes = _download_video(ig_share, cdn_link, code)
 
         if video_bytes:
-            # Manda solo el video, sin texto
+            # Manda SOLO el video, sin texto ni caption
             try:
                 rv = requests.post(
                     f"https://api.telegram.org/bot{bot_token}/sendVideo",
