@@ -107,7 +107,7 @@ def send_gave_to_model_videos(api_key, base_id):
         flds         = reel.get("fields", {})
         code         = flds.get("🤖 Reel ID", "")
         cdn_link     = flds.get("⬇️ Download link", "")
-        ig_share     = flds.get("⬇️ Download link Agency", f"https://www.instagram.com/reel/{code}/")
+        ig_share     = f"https://www.instagram.com/reel/{code}/"
 
         logging.info(f"Processing reel {rid} ({code})")
         video_bytes = _download_video(ig_share, cdn_link, code)
