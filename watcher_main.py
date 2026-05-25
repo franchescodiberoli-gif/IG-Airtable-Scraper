@@ -39,23 +39,53 @@ def records_to_dataframe(records):
     rows = [rec.get("fields", {}) for rec in records]
     return pd.DataFrame(rows)
 
-def _download_video(dl_link, reel_id, rapidapi_key):
+def _download_video(ig_share_link, cdn_link, reel_id, rapidapi_key):
+    """
+    Orden de intentos:
+    1. yt-dlp con link de Instagram (gratis, sin cookies, no expira)
+    2. CDN directo (puede estar expirado)
+    3. RapidAPI link fresco
+    """
     video_bytes = None
 
-    # Intento 1: link CDN directo
-    try:
-        r = requests.get(dl_link, timeout=20)
-        r.raise_for_status()
-        video_bytes = BytesIO(r.content)
-        video_bytes.name = f"{reel_id}.mp4"
-        video_bytes.seek(0)
-        logging.info(f"[Intento 1 OK] {reel_id}")
-    except Exception as e:
-        logging.warning(f"[Intento 1 FAIL] {reel_id}: {e}")
+    # Intento 1: yt-dlp con link permanente de Instagram
+    if ig_share_link:
+        try:
+            import yt_dlp
+            logging.info(f"[Intento 1] yt-dlp con {ig_share_link}")
+            ydl_opts = {"quiet": True, "no_warnings": True, "format": "best[ext=mp4]/best"}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(ig_share_link, download=False)
+            formats   = info.get("formats") or []
+            fresh_url = info.get("url") or (formats[-1].get("url") if formats else "")
+            if not fresh_url:
+                raise ValueError("yt-dlp no extrajo URL")
+            r = requests.get(fresh_url, timeout=30)
+            r.raise_for_status()
+            video_bytes = BytesIO(r.content)
+            video_bytes.name = f"{reel_id}.mp4"
+            video_bytes.seek(0)
+            logging.info(f"[Intento 1 OK] yt-dlp exitoso para {reel_id}")
+        except Exception as e:
+            logging.warning(f"[Intento 1 FAIL] yt-dlp: {e}")
 
-    # Intento 2: RapidAPI link fresco
+    # Intento 2: CDN directo
+    if not video_bytes and cdn_link:
+        try:
+            logging.info(f"[Intento 2] CDN directo para {reel_id}")
+            r = requests.get(cdn_link, timeout=20)
+            r.raise_for_status()
+            video_bytes = BytesIO(r.content)
+            video_bytes.name = f"{reel_id}.mp4"
+            video_bytes.seek(0)
+            logging.info(f"[Intento 2 OK] CDN para {reel_id}")
+        except Exception as e:
+            logging.warning(f"[Intento 2 FAIL] CDN: {e}")
+
+    # Intento 3: RapidAPI link fresco
     if not video_bytes and rapidapi_key:
         try:
+            logging.info(f"[Intento 3] RapidAPI para {reel_id}")
             rapid_headers = {
                 "x-rapidapi-key": rapidapi_key,
                 "x-rapidapi-host": "real-time-instagram-scraper-api1.p.rapidapi.com"
@@ -71,35 +101,15 @@ def _download_video(dl_link, reel_id, rapidapi_key):
             vid2  = max(data2.get("video_versions", []), key=lambda v: v.get("height", 0), default={})
             fresh_url = vid2.get("url", "")
             if not fresh_url:
-                raise ValueError("No URL de video")
+                raise ValueError("RapidAPI no devolvio URL")
             r2 = requests.get(fresh_url, timeout=20)
             r2.raise_for_status()
             video_bytes = BytesIO(r2.content)
             video_bytes.name = f"{reel_id}.mp4"
             video_bytes.seek(0)
-            logging.info(f"[Intento 2 OK] {reel_id}")
-        except Exception as e2:
-            logging.warning(f"[Intento 2 FAIL] {reel_id}: {e2}")
-
-    # Intento 3: yt-dlp con link de Instagram
-    if not video_bytes:
-        try:
-            import yt_dlp
-            ydl_opts = {"quiet": True, "no_warnings": True, "format": "best[ext=mp4]/best"}
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"https://www.instagram.com/reel/{reel_id}/", download=False)
-            formats   = info.get("formats") or []
-            fresh_url = info.get("url") or (formats[-1].get("url") if formats else "")
-            if not fresh_url:
-                raise ValueError("yt-dlp no extrajo URL")
-            r3 = requests.get(fresh_url, timeout=30)
-            r3.raise_for_status()
-            video_bytes = BytesIO(r3.content)
-            video_bytes.name = f"{reel_id}.mp4"
-            video_bytes.seek(0)
-            logging.info(f"[Intento 3 OK] {reel_id}")
-        except Exception as e3:
-            logging.warning(f"[Intento 3 FAIL] {reel_id}: {e3}")
+            logging.info(f"[Intento 3 OK] RapidAPI para {reel_id}")
+        except Exception as e:
+            logging.warning(f"[Intento 3 FAIL] RapidAPI: {e}")
 
     return video_bytes
 
@@ -124,34 +134,21 @@ def send_gave_to_model_videos(api_key, base_id):
     logging.info(f"Found {len(to_send)} reels marked 'Gave to the Model'")
 
     for reel in to_send:
-        rid     = reel["id"]
-        flds    = reel.get("fields", {})
-        code    = flds.get("🤖 Reel ID", "")
-        dl_link = flds.get("⬇️ Download link", "")
-        views   = flds.get("👀 Views", 0)
-        likes   = flds.get("👍 Like count", 0)
-        comments= flds.get("💬 Comment count", 0)
-        caption = flds.get("📒 Caption", "")
-        vir_pct = flds.get("Virality score", 0) * 100
+        rid          = reel["id"]
+        flds         = reel.get("fields", {})
+        code         = flds.get("🤖 Reel ID", "")
+        cdn_link     = flds.get("⬇️ Download link", "")
+        ig_share     = flds.get("⬇️ Download link Agency", f"https://www.instagram.com/reel/{code}/")
 
         logging.info(f"Processing reel {rid} ({code})")
-        video_bytes = _download_video(dl_link, code, rapidapi_key)
-
-        base_text = (
-            f"✅ Reel enviado al modelo\n\n"
-            f"📊 Virality: +{vir_pct:.2f}% sobre promedio\n"
-            f"👀 Views: {views}\n"
-            f"👍 Likes: {likes}\n"
-            f"💬 Comments: {comments}\n\n"
-            f"🔗 https://www.instagram.com/reel/{code}\n\n"
-            f"💬 {caption}"
-        )
+        video_bytes = _download_video(ig_share, cdn_link, code, rapidapi_key)
 
         if video_bytes:
+            # Manda solo el video, sin texto
             try:
                 rv = requests.post(
                     f"https://api.telegram.org/bot{bot_token}/sendVideo",
-                    data={"chat_id": personal_chat_id, "caption": base_text},
+                    data={"chat_id": personal_chat_id},
                     files={"video": (video_bytes.name, video_bytes, "video/mp4")}
                 )
                 rv.raise_for_status()
@@ -161,13 +158,14 @@ def send_gave_to_model_videos(api_key, base_id):
                 video_bytes = None
 
         if not video_bytes:
+            # Si no hay video manda solo el link de Instagram
             try:
                 rt = requests.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                    data={"chat_id": personal_chat_id, "text": base_text + "\n\n⚠️ Video link expired."}
+                    data={"chat_id": personal_chat_id, "text": ig_share}
                 )
                 rt.raise_for_status()
-                logging.info(f"sendMessage OK (sin video) para reel {rid}")
+                logging.info(f"sendMessage link OK para reel {rid}")
             except Exception as e:
                 logging.error(f"sendMessage failed {rid}: {e}")
 
@@ -183,7 +181,7 @@ def send_gave_to_model_videos(api_key, base_id):
                 "Content-Type": "application/json"
             })
             rp.raise_for_status()
-            logging.info(f"Marcado Enviado y desmarcado Gave to the Model para {rid}")
+            logging.info(f"Marcado Enviado para {rid}")
         except Exception as e:
             logging.error(f"Failed to update flags for {rid}: {e}")
 
