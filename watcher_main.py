@@ -121,6 +121,7 @@ def send_gave_to_model_videos(api_key, base_id):
         video_bytes = _download_video(ig_share, cdn_link, code)
 
         if video_bytes:
+            # Manda SOLO el video, sin texto ni caption
             try:
                 rv = requests.post(
                     f"https://api.telegram.org/bot{bot_token}/sendVideo",
@@ -134,6 +135,7 @@ def send_gave_to_model_videos(api_key, base_id):
                 video_bytes = None
 
         if not video_bytes:
+            # Si no hay video manda solo el link de Instagram
             try:
                 rt = requests.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -144,6 +146,7 @@ def send_gave_to_model_videos(api_key, base_id):
             except Exception as e:
                 logging.error(f"sendMessage failed {rid}: {e}")
 
+        # Desmarcar Gave to the Model y marcar Enviado
         try:
             patch_url = f"https://api.airtable.com/v0/{base_id}/{quote('🎥 Agency Reels')}"
             payload = {"records": [{"id": rid, "fields": {
