@@ -3,6 +3,7 @@ import pandas as pd
 import logging
 import os
 import datetime
+import time
 from io import BytesIO
 from urllib.parse import quote
 
@@ -31,8 +32,15 @@ def fetch_table_records(api_key, base_id, table_name, view=None):
     while True:
         if offset:
             params["offset"] = offset
-        resp = requests.get(url, headers=headers, params=params)
-        resp.raise_for_status()
+        for attempt in range(5):
+            resp = requests.get(url, headers=headers, params=params)
+            if resp.status_code == 429:
+                wait = 30 * (attempt + 1)
+                logging.warning(f"429 rate limit — esperando {wait}s antes de reintentar...")
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            break
         data = resp.json()
         records = data.get("records", [])
         logging.info(f"Fetched {len(records)} records from this page")
