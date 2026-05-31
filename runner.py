@@ -27,7 +27,6 @@ watcher_thread = threading.Thread(target=run_watcher, daemon=True)
 watcher_thread.start()
 
 # Esperar 15 segundos antes de arrancar el scraper principal
-# para evitar que ambos hagan requests a Airtable al mismo tiempo (error 429)
 logging.info("Esperando 15 segundos antes de arrancar el scraper principal...")
 time.sleep(15)
 
