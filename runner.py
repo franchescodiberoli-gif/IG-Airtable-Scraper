@@ -10,7 +10,8 @@ logging.basicConfig(
 
 def run_watcher():
     """Corre el watcher cada 3 minutos — solo revisa Gave to the Model."""
-    logging.info("Watcher iniciado — revisando cada 3 minutos")
+    logging.info("Watcher iniciado — primera revision en 10 minutos para no interferir con el scraper principal...")
+    time.sleep(600)
     while True:
         subprocess.run(["python", "watcher_main.py"])
         time.sleep(180)
